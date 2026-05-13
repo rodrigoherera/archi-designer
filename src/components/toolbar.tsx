@@ -189,6 +189,42 @@ export function Toolbar() {
     }[] = [];
     const [c0, c1] = turboColors ?? ["#ec4899", "#3b82f6"];
     const SVG_NS = "http://www.w3.org/2000/svg";
+
+    // html-to-image deep-clones SVGs but skips style inlining on SVG children.
+    // Inline computed stroke/fill on all edge paths so they survive the clone.
+    const allEdgePaths = Array.from(
+      viewport.querySelectorAll(
+        ".react-flow__edge-path, .react-flow__edge-interaction"
+      )
+    ) as SVGElement[];
+    const savedEdgePathStyles = allEdgePaths.map((el) => ({
+      el,
+      style: el.getAttribute("style"),
+    }));
+    allEdgePaths.forEach((el) => {
+      const cs = window.getComputedStyle(el);
+      el.style.setProperty("stroke", cs.stroke);
+      el.style.setProperty("stroke-width", cs.strokeWidth);
+      el.style.setProperty("fill", cs.fill);
+      if (cs.strokeDasharray && cs.strokeDasharray !== "none")
+        el.style.setProperty("stroke-dasharray", cs.strokeDasharray);
+      if (cs.strokeLinecap && cs.strokeLinecap !== "butt")
+        el.style.setProperty("stroke-linecap", cs.strokeLinecap);
+    });
+
+    // Clone marker <defs> into each edge SVG so url(#marker) refs resolve
+    // within the same SVG (html-to-image isolates each SVG).
+    const defsSource = edgesContainer?.querySelector("svg > defs");
+    const injectedDefs: SVGDefsElement[] = [];
+    if (defsSource) {
+      edgeSvgs.forEach((svg) => {
+        if (svg.contains(defsSource)) return;
+        const clone = defsSource.cloneNode(true) as SVGDefsElement;
+        svg.insertBefore(clone, svg.firstChild);
+        injectedDefs.push(clone);
+      });
+    }
+
     edgeSvgs.forEach((svg) => {
       const turboPaths = svg.querySelectorAll(
         ".react-flow__edge.turbo-on .react-flow__edge-path"
@@ -264,16 +300,19 @@ export function Toolbar() {
         if (savedEdgesStyle === null) edgesContainer.removeAttribute("style");
         else edgesContainer.setAttribute("style", savedEdgesStyle);
       }
-      overriddenPaths.forEach(({ el, stroke, style }) => {
+      injectedDefs.forEach((d) => d.parentNode?.removeChild(d));
+      overriddenPaths.forEach(({ el, stroke }) => {
         if (stroke === null) el.removeAttribute("stroke");
         else el.setAttribute("stroke", stroke);
-        if (style === null) el.removeAttribute("style");
-        else el.setAttribute("style", style);
       });
       edgeSvgs.forEach((svg) => {
         svg
           .querySelectorAll("linearGradient[id^='turbo-edge-export-']")
           .forEach((g) => g.parentNode?.removeChild(g));
+      });
+      savedEdgePathStyles.forEach(({ el, style }) => {
+        if (style === null) el.removeAttribute("style");
+        else el.setAttribute("style", style);
       });
     }
   };
