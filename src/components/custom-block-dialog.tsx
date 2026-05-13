@@ -134,7 +134,7 @@ export function CustomBlockDialog({
   const addCustomBlock = useFlowStore((s) => s.addCustomBlock);
   const [label, setLabel] = useState("");
   const [subtitle, setSubtitle] = useState("");
-  const [iconName, setIconName] = useState<IconName>("Box");
+  const [iconName, setIconName] = useState<IconName>("");
   const [accent, setAccent] = useState<Accent>("slate");
   const [iconQuery, setIconQuery] = useState("");
   const [bgColor, setBgColor] = useState<string | undefined>(undefined);
@@ -155,7 +155,7 @@ export function CustomBlockDialog({
   const reset = () => {
     setLabel("");
     setSubtitle("");
-    setIconName("Box");
+    setIconName("");
     setAccent("slate");
     setIconQuery("");
     setBgColor(undefined);
@@ -243,6 +243,17 @@ export function CustomBlockDialog({
               />
             </div>
             <div className="grid max-h-44 grid-cols-10 gap-1 overflow-y-auto rounded-md border border-border bg-background/40 p-1.5">
+              <button
+                type="button"
+                onClick={() => setIconName("")}
+                title="None"
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                  iconName === "" && "bg-accent text-foreground ring-1 ring-ring"
+                )}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
               {filteredIcons.map((name) => {
                 const Ic = resolveIcon(name);
                 return (

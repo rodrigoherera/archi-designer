@@ -722,6 +722,7 @@ function CanvasInner() {
               {registry.map((b) => {
                 const Ic = resolveIcon(b.iconName);
                 const accent = ACCENT_CLASSES[b.accent];
+                const hasIcon = !!(b.customIcon || b.iconName);
                 return (
                   <button
                     key={b.id}
@@ -741,8 +742,10 @@ function CanvasInner() {
                           alt=""
                           className="h-full w-full object-cover"
                         />
-                      ) : (
+                      ) : hasIcon ? (
                         <Ic className={cn("h-3 w-3", accent.icon)} />
+                      ) : (
+                        <span className={cn("h-2 w-2 rounded-full", accent.dot)} />
                       )}
                     </span>
                     <span className="flex-1 truncate">{b.label}</span>

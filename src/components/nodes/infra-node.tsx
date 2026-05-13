@@ -35,7 +35,9 @@ function InfraNodeComponent({ data, selected }: NodeProps<InfraNode>) {
     ? { color: data.subtitleColor }
     : undefined;
 
-  const iconTile = (
+  const showIcon = !!(customIcon || iconName);
+
+  const iconTile = showIcon ? (
     <div
       className={cn(
         "flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg",
@@ -53,7 +55,7 @@ function InfraNodeComponent({ data, selected }: NodeProps<InfraNode>) {
         <Icon className={cn("h-5 w-5", accent.icon)} />
       )}
     </div>
-  );
+  ) : null;
 
   const isVertical = iconPosition === "top" || iconPosition === "bottom";
   const textBlock = (
@@ -124,8 +126,9 @@ function InfraNodeComponent({ data, selected }: NodeProps<InfraNode>) {
           !isVertical && textAlign === "center" && "justify-center"
         )}
       >
-        {iconFirst ? iconTile : textBlock}
-        {iconFirst ? textBlock : iconTile}
+        {iconFirst && iconTile}
+        {textBlock}
+        {!iconFirst && iconTile}
       </div>
     </div>
   );

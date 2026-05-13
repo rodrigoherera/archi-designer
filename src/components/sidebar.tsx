@@ -55,10 +55,12 @@ function AccentTile({
   icon: Icon,
   accent,
   customIcon,
+  hasIcon,
 }: {
   icon: LucideIcon;
   accent: Accent;
   customIcon?: string;
+  hasIcon?: boolean;
 }) {
   const c = ACCENT_CLASSES[accent];
   return (
@@ -70,6 +72,8 @@ function AccentTile({
     >
       {customIcon ? (
         <img src={customIcon} alt="" className="h-4 w-4 object-contain" />
+      ) : hasIcon === false ? (
+        <span className={cn("h-2.5 w-2.5 rounded-full", c.dot)} />
       ) : (
         <Icon className={cn("h-4 w-4", c.icon)} />
       )}
@@ -91,6 +95,7 @@ function BlockChip({
         icon={Icon}
         accent={block.accent}
         customIcon={block.customIcon}
+        hasIcon={!!block.iconName}
       />
       <span className="flex-1 truncate">{block.label}</span>
       {onDelete && (

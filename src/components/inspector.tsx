@@ -419,6 +419,18 @@ function IconPicker({ value, onChange }: { value: string; onChange: (name: strin
         />
       </div>
       <div className="grid max-h-44 grid-cols-8 gap-1 overflow-y-auto rounded-md border border-border bg-background/40 p-1.5">
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+            value === "" && "bg-accent text-foreground ring-1 ring-ring"
+          )}
+          title="None"
+          aria-label="No icon"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
         {filtered.map((name) => {
           const Ic = resolveIcon(name);
           const active = value === name;
