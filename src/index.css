@@ -232,22 +232,3 @@
   from { stroke-dashoffset: var(--dash-offset); }
   to   { stroke-dashoffset: 0; }
 }
-
-/* Preview mode: hide hover/edit UI on blocks and edges */
-.preview-mode .react-flow__handle {
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-.preview-mode .react-flow__edge .react-flow__edgelabel-renderer button {
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-.preview-mode .infra-card button,
-.preview-mode [data-hover-only] {
-  display: none !important;
-}
-.preview-mode .react-flow__node:hover,
-.preview-mode .react-flow__edge:hover {
-  cursor: default !important;
-}
-

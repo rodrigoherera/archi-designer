@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
 } from "react";
@@ -28,6 +29,7 @@ import {
   DEFAULT_MARKER,
   useFlowStore,
   type AppNode,
+  type LabeledEdge as LabeledEdgeType,
   type ShapeKind,
 } from "@/store/flow-store";
 import { ACCENT_CLASSES, CORE_BLOCKS } from "@/blocks/registry";
@@ -251,14 +253,19 @@ function CanvasInner() {
     return sel.length === 1 ? sel[0] : null;
   });
   const allNodes = useFlowStore((s) => s.nodes);
-  const workMode = useFlowStore((s) => s.workMode);
-  const isPreview = workMode === "preview";
-  const { screenToFlowPosition } = useReactFlow();
+  const {
+    screenToFlowPosition,
+    setNodes: setFlowNodes,
+    setEdges: setFlowEdges,
+  } = useReactFlow<AppNode, LabeledEdgeType>();
   const { x: vpX, y: vpY, zoom } = useViewport();
 
   const [guides, setGuides] = useState<Guide[]>([]);
   const [altDown, setAltDown] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const isDraggingRef = useRef(false);
+  const isSyncingRef = useRef(false);
+  const pendingDragPositionsRef = useRef(new Map<string, { x: number; y: number }>());
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -278,9 +285,62 @@ function CanvasInner() {
     };
   }, []);
 
+  const commitPendingDragPositions = useCallback(() => {
+    const pending = pendingDragPositionsRef.current;
+    if (pending.size === 0) return;
+    pendingDragPositionsRef.current = new Map();
+    isDraggingRef.current = false;
+    const current = useFlowStore.getState().nodes;
+    useFlowStore.getState().replace({
+      nodes: current.map((node) => {
+        const position = pending.get(node.id);
+        return position
+          ? ({ ...node, position, dragging: false } as AppNode)
+          : node;
+      }),
+    });
+  }, []);
+
+  useEffect(() => {
+    const commit = () => {
+      requestAnimationFrame(commitPendingDragPositions);
+    };
+    window.addEventListener("pointerup", commit, true);
+    window.addEventListener("blur", commit);
+    return () => {
+      window.removeEventListener("pointerup", commit, true);
+      window.removeEventListener("blur", commit);
+    };
+  }, [commitPendingDragPositions]);
+
   const handleNodesChange = useCallback(
     (changes: NodeChange<AppNode>[]) => {
-      if (!showSmartGuides) {
+      if (isSyncingRef.current) return;
+      const hasActiveDrag = changes.some(
+        (c) => c.type === "position" && c.dragging
+      );
+      if (hasActiveDrag) {
+        isDraggingRef.current = true;
+        for (const change of changes) {
+          if (
+            change.type === "position" &&
+            change.dragging &&
+            change.position
+          ) {
+            pendingDragPositionsRef.current.set(change.id, change.position);
+          }
+        }
+        if (!showSmartGuides || !altDown) {
+          return;
+        }
+      }
+      if (
+        changes.some((c) => c.type === "position" && c.dragging === false)
+      ) {
+        commitPendingDragPositions();
+        return;
+      }
+      if (!showSmartGuides || !altDown) {
         onNodesChange(changes);
         return;
       }
@@ -288,7 +348,6 @@ function CanvasInner() {
       const dragChanges = changes.filter(
         (c) => c.type === "position" && c.dragging && c.position
       );
-      let patched = changes;
       const nextGuides: Guide[] = [];
       if (dragChanges.length === 1) {
         const c = dragChanges[0] as Extract<
@@ -302,9 +361,6 @@ function CanvasInner() {
           );
           const snap = computeSnap(drag, c.position, others, zoom);
           nextGuides.push(...snap.guides);
-          patched = changes.map((ch) =>
-            ch === c ? { ...c, position: snap.position } : ch
-          );
         }
       }
       const dragEnd = changes.some(
@@ -317,9 +373,63 @@ function CanvasInner() {
       } else {
         setGuides(nextGuides);
       }
-      onNodesChange(patched);
+      onNodesChange(changes);
     },
-    [onNodesChange, guides.length, showSmartGuides, zoom]
+    [
+      onNodesChange,
+      guides.length,
+      showSmartGuides,
+      altDown,
+      zoom,
+      commitPendingDragPositions,
+    ]
+  );
+
+  const commitLiveNodes = useCallback((liveNodes: AppNode[]) => {
+    isDraggingRef.current = false;
+    const byId = new Map(liveNodes.map((n) => [n.id, n]));
+    const current = useFlowStore.getState().nodes;
+    useFlowStore.getState().replace({
+      nodes: current.map((node) => {
+        const live = byId.get(node.id);
+        if (!live) return node;
+        return {
+          ...node,
+          position: live.position,
+          selected: live.selected,
+          dragging: false,
+          width: live.width,
+          height: live.height,
+          measured: live.measured,
+          style: live.style,
+        } as AppNode;
+      }),
+    });
+  }, []);
+
+  const commitNodeDragStop = useCallback(
+    (_: unknown, node: AppNode, draggedNodes?: AppNode[]) => {
+      commitLiveNodes(draggedNodes?.length ? draggedNodes : [node]);
+    },
+    [commitLiveNodes]
+  );
+
+  const commitSelectionDragStop = useCallback(
+    (_: unknown, draggedNodes: AppNode[]) => {
+      commitLiveNodes(draggedNodes);
+    },
+    [commitLiveNodes]
+  );
+
+  const recordNodeDrag = useCallback(
+    (_: unknown, node: AppNode, draggedNodes?: AppNode[]) => {
+      isDraggingRef.current = true;
+      const liveNodes = draggedNodes?.length ? draggedNodes : [node];
+      for (const live of liveNodes) {
+        pendingDragPositionsRef.current.set(live.id, live.position);
+      }
+    },
+    []
   );
 
   const registry = useMemo(
@@ -342,6 +452,20 @@ function CanvasInner() {
       e.data?.turbo ? { ...e, className: cn(e.className, "turbo-on") } : e
     );
   }, [edges]);
+
+  useEffect(() => {
+    if (isDraggingRef.current) return;
+    isSyncingRef.current = true;
+    setFlowNodes(displayNodes);
+    const t = window.setTimeout(() => {
+      isSyncingRef.current = false;
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [displayNodes, setFlowNodes]);
+
+  useEffect(() => {
+    setFlowEdges(displayEdges);
+  }, [displayEdges, setFlowEdges]);
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -489,10 +613,10 @@ function CanvasInner() {
 
   return (
     <div
+      data-testid="canvas"
       className={cn(
         "relative h-full w-full",
-        turbo && "turbo",
-        isPreview && "preview-canvas"
+        turbo && "turbo"
       )}
       style={wrapperStyle}
       onDrop={onDrop}
@@ -500,9 +624,12 @@ function CanvasInner() {
     >
       <TurboDefs colors={turboColors} />
       <ReactFlow
-        nodes={displayNodes}
-        edges={displayEdges}
+        defaultNodes={displayNodes}
+        defaultEdges={displayEdges}
         onNodesChange={handleNodesChange}
+        onNodeDrag={recordNodeDrag}
+        onNodeDragStop={commitNodeDragStop}
+        onSelectionDragStop={commitSelectionDragStop}
         onNodeMouseEnter={(_, n) => setHoveredId(n.id)}
         onNodeMouseLeave={() => setHoveredId(null)}
         onEdgesChange={onEdgesChange}
@@ -533,7 +660,7 @@ function CanvasInner() {
         {showControls && <Controls showInteractive={false} />}
         {showMinimap && <MiniMap pannable zoomable />}
       </ReactFlow>
-      {!isPreview && showSmartGuides && guides.length > 0 && (
+      {showSmartGuides && guides.length > 0 && (
         <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full">
           {guides.map((g, i) => {
             if (g.axis === "x") {
@@ -567,7 +694,7 @@ function CanvasInner() {
           })}
         </svg>
       )}
-      {!isPreview && showSmartGuides && altDown && selectedSingle && (() => {
+      {showSmartGuides && altDown && selectedSingle && (() => {
         const { w: sw, h: sh } = nodeDims(selectedSingle);
         if (sw === 0 || sh === 0) return null;
         const sx = (fx: number) => vpX + fx * zoom;

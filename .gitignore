@@ -9,6 +9,8 @@ node_modules
 
 # Build output
 dist
+playwright-report
+test-results
 dist-ssr
 build
 out

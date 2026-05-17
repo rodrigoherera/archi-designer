@@ -8,19 +8,9 @@ import { useFlowStore } from "@/store/flow-store";
 import { cn } from "@/lib/utils";
 
 export default function App() {
-  const hasSelection = useFlowStore((s) => s.nodes.some((n) => n.selected));
-  const workMode = useFlowStore((s) => s.workMode);
-  const setWorkMode = useFlowStore((s) => s.setWorkMode);
-  const isPreview = workMode === "preview";
-
-  useEffect(() => {
-    if (!isPreview) return;
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setWorkMode("design");
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [isPreview, setWorkMode]);
+  const hasSelection = useFlowStore(
+    (s) => s.nodes.some((n) => n.selected) || s.edges.some((e) => e.selected)
+  );
 
   const clipboardRef = useRef<{ ids: string[]; pasteCount: number }>({
     ids: [],
@@ -64,20 +54,15 @@ export default function App() {
 
   return (
     <ReactFlowProvider>
-      <div
-        className={cn(
-          "flex h-screen w-screen bg-background text-foreground",
-          isPreview && "preview-mode"
-        )}
-      >
-        {!isPreview && <Sidebar />}
+      <div className={cn("flex h-screen w-screen bg-background text-foreground")}>
+        <Sidebar />
         <div className="flex flex-1 flex-col overflow-hidden">
-          {!isPreview && <Toolbar />}
+          <Toolbar />
           <div className="relative flex flex-1 overflow-hidden">
             <main className="flex-1 overflow-hidden">
               <Canvas />
             </main>
-            {!isPreview && hasSelection && <Inspector />}
+            {hasSelection && <Inspector />}
           </div>
         </div>
       </div>

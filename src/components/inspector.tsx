@@ -36,6 +36,7 @@ import {
   type TextAlign,
   type TextNode,
   type TunnelNode,
+  type LabeledEdge,
 } from "@/store/flow-store";
 import {
   ACCENT_CLASSES,
@@ -70,12 +71,13 @@ export function Inspector() {
   const selectedProjection = useFlowStore(
     useShallow((s) => {
       const n = s.nodes.find((x) => x.selected);
-      if (!n) return null;
-      return { id: n.id, type: n.type, data: n.data };
+      if (n) return { kind: "node" as const, item: n };
+      const e = s.edges.find((x) => x.selected);
+      if (e) return { kind: "edge" as const, item: e };
+      return null;
     })
   );
   if (!selectedProjection) return null;
-  const selectedNode = selectedProjection as unknown as AppNode;
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-l border-border bg-card/40">
@@ -85,7 +87,11 @@ export function Inspector() {
         </p>
       </div>
       <div className="flex-1 space-y-5 overflow-y-auto p-4">
-        <NodeEditor node={selectedNode} />
+        {selectedProjection.kind === "node" ? (
+          <NodeEditor node={selectedProjection.item as AppNode} />
+        ) : (
+          <EdgeEditor edge={selectedProjection.item as LabeledEdge} />
+        )}
       </div>
     </aside>
   );
@@ -118,14 +124,143 @@ function LayerControls({ id }: { id: string }) {
 }
 
 function NodeEditor({ node }: { node: AppNode }) {
-  if (node.type === "infra") return <InfraEditor node={node as InfraNode} />;
-  if (node.type === "shape") return <ShapeEditor node={node as ShapeNode} />;
-  if (node.type === "step") return <StepEditor node={node as StepNode} />;
-  if (node.type === "tunnel") return <TunnelEditor node={node as TunnelNode} />;
-  if (node.type === "line") return <LineEditor node={node as LineNode} />;
-  if (node.type === "image") return <ImageEditor node={node as ImageNode} />;
-  if (node.type === "code") return <CodeEditor node={node as CodeNode} />;
-  return <TextEditor node={node as TextNode} />;
+  const editor =
+    node.type === "infra" ? (
+      <InfraEditor node={node as InfraNode} />
+    ) : node.type === "shape" ? (
+      <ShapeEditor node={node as ShapeNode} />
+    ) : node.type === "step" ? (
+      <StepEditor node={node as StepNode} />
+    ) : node.type === "tunnel" ? (
+      <TunnelEditor node={node as TunnelNode} />
+    ) : node.type === "line" ? (
+      <LineEditor node={node as LineNode} />
+    ) : node.type === "image" ? (
+      <ImageEditor node={node as ImageNode} />
+    ) : node.type === "code" ? (
+      <CodeEditor node={node as CodeNode} />
+    ) : (
+      <TextEditor node={node as TextNode} />
+    );
+  return (
+    <>
+      {editor}
+      <NodeArchitectureEditor node={node} />
+    </>
+  );
+}
+
+function FieldText({
+  id,
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
+function NodeArchitectureEditor({ node }: { node: AppNode }) {
+  const updateNodeData = useFlowStore((s) => s.updateNodeData);
+  const arch = node.data.architecture ?? {};
+  const patch = (key: keyof typeof arch, value: string) =>
+    updateNodeData(node.id, {
+      architecture: { ...arch, [key]: value },
+    });
+  return (
+    <section className="grid gap-3 border-t border-border pt-4">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Architecture
+      </p>
+      <FieldText
+        id={`${node.id}-arch-category`}
+        label="Category"
+        value={arch.category ?? ""}
+        placeholder="compute, database, queue"
+        onChange={(v) => patch("category", v)}
+      />
+      <FieldText
+        id={`${node.id}-arch-env`}
+        label="Environment"
+        value={arch.environment ?? ""}
+        placeholder="production, staging"
+        onChange={(v) => patch("environment", v)}
+      />
+      <FieldText
+        id={`${node.id}-arch-zone`}
+        label="Trust zone"
+        value={arch.trustZone ?? ""}
+        placeholder="public, private, external"
+        onChange={(v) => patch("trustZone", v)}
+      />
+      <FieldText
+        id={`${node.id}-arch-data`}
+        label="Data classification"
+        value={arch.dataClassification ?? ""}
+        placeholder="public, user-data, sensitive"
+        onChange={(v) => patch("dataClassification", v)}
+      />
+    </section>
+  );
+}
+
+function EdgeEditor({ edge }: { edge: LabeledEdge }) {
+  const updateEdgeLabel = useFlowStore((s) => s.updateEdgeLabel);
+  const updateEdgeArchitecture = useFlowStore((s) => s.updateEdgeArchitecture);
+  const arch = edge.data?.architecture ?? {};
+  return (
+    <>
+      <FieldText
+        id={`${edge.id}-label`}
+        label="Label"
+        value={edge.data?.label ?? ""}
+        placeholder="Reads/Writes"
+        onChange={(v) => updateEdgeLabel(edge.id, v)}
+      />
+      <section className="grid gap-3 border-t border-border pt-4">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Data Flow
+        </p>
+        <FieldText
+          id={`${edge.id}-protocol`}
+          label="Protocol"
+          value={arch.protocol ?? ""}
+          placeholder="HTTPS, PostgreSQL"
+          onChange={(v) => updateEdgeArchitecture(edge.id, { protocol: v })}
+        />
+        <FieldText
+          id={`${edge.id}-port`}
+          label="Port"
+          value={arch.port ?? ""}
+          placeholder="443, 5432"
+          onChange={(v) => updateEdgeArchitecture(edge.id, { port: v })}
+        />
+        <FieldText
+          id={`${edge.id}-flow`}
+          label="Data"
+          value={arch.dataFlow ?? ""}
+          placeholder="Customer records"
+          onChange={(v) => updateEdgeArchitecture(edge.id, { dataFlow: v })}
+        />
+      </section>
+    </>
+  );
 }
 
 const CODE_LANGUAGES: CodeLanguage[] = [

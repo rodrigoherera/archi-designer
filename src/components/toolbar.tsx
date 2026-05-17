@@ -20,6 +20,10 @@ import { toPng, toSvg } from "html-to-image";
 import { useStore } from "zustand";
 import { useFlowStore } from "@/store/flow-store";
 import { downloadSnapshot, readSnapshotFromFile } from "@/lib/storage";
+import {
+  exportArchitectureMarkdown,
+  exportArchitectureMermaid,
+} from "@/lib/architecture";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -33,21 +37,14 @@ import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 
-import type { WorkMode } from "@/store/flow-store";
-const WORK_MODES: { id: WorkMode; label: string }[] = [
-  { id: "design", label: "Design" },
-  { id: "preview", label: "Preview" },
-];
-
 export function Toolbar() {
-  const nodes = useFlowStore((s) => s.nodes);
-  const edges = useFlowStore((s) => s.edges);
-  const customBlocks = useFlowStore((s) => s.customBlocks);
-  const groups = useFlowStore((s) => s.groups);
-  const turbo = useFlowStore((s) => s.turbo);
-  const animateEdges = useFlowStore((s) => s.animateEdges);
-  const animationSpeed = useFlowStore((s) => s.animationSpeed);
-  const turboColors = useFlowStore((s) => s.turboColors);
+  const pages = useFlowStore((s) => s.pages);
+  const currentPageId = useFlowStore((s) => s.currentPageId);
+  const createPage = useFlowStore((s) => s.createPage);
+  const switchPage = useFlowStore((s) => s.switchPage);
+  const renamePage = useFlowStore((s) => s.renamePage);
+  const duplicatePage = useFlowStore((s) => s.duplicatePage);
+  const deletePage = useFlowStore((s) => s.deletePage);
   const replace = useFlowStore((s) => s.replace);
   const clear = useFlowStore((s) => s.clear);
   const resetWorkspace = useFlowStore((s) => s.resetWorkspace);
@@ -56,8 +53,6 @@ export function Toolbar() {
   const addImageNode = useFlowStore((s) => s.addImageNode);
   const { zoomIn, zoomOut, fitView, setViewport, screenToFlowPosition } =
     useReactFlow();
-  const workMode = useFlowStore((s) => s.workMode);
-  const setWorkMode = useFlowStore((s) => s.setWorkMode);
   const fileRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLInputElement>(null);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
@@ -135,7 +130,7 @@ export function Toolbar() {
       .replace(/[:T]/g, "-")}`;
 
   const openExportDialog = (format: "png" | "svg") => {
-    if (nodes.length === 0) return;
+    if (useFlowStore.getState().nodes.length === 0) return;
     setCropMode({ format });
   };
 
@@ -178,6 +173,7 @@ export function Toolbar() {
     const viewport = document.querySelector(
       ".react-flow__viewport"
     ) as HTMLElement | null;
+    const { nodes, turboColors } = useFlowStore.getState();
     if (!viewport || nodes.length === 0) return;
     const bounds = customBounds ?? getNodesBounds(nodes);
     if (bounds.width === 0 || bounds.height === 0) return;
@@ -365,13 +361,21 @@ export function Toolbar() {
       .replace(/[:T]/g, "-")}`;
     const name = window.prompt("Save as:", suggested);
     if (name === null) return;
+    const {
+      customBlocks,
+      pages,
+      currentPageId,
+      turbo,
+      animateEdges,
+      animationSpeed,
+      turboColors,
+    } = useFlowStore.getState();
     downloadSnapshot(
       {
-        version: 1,
-        nodes,
-        edges,
+        version: 2,
         customBlocks,
-        groups,
+        pages,
+        currentPageId,
         turbo,
         animateEdges,
         animationSpeed,
@@ -381,14 +385,48 @@ export function Toolbar() {
     );
   };
 
+  const downloadText = (content: string, filename: string, type = "text/plain") => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportDoc = (format: "markdown" | "mermaid") => {
+    const suggested = defaultExportName();
+    const name = window.prompt("Save as:", suggested);
+    if (name === null) return;
+    const { nodes, edges, groups } = useFlowStore.getState();
+    const clean = name.trim().replace(/[\\/:*?"<>|]/g, "_") || suggested;
+    if (format === "markdown") {
+      downloadText(
+        exportArchitectureMarkdown({ nodes, edges, groups }),
+        clean.endsWith(".md") ? clean : `${clean}.md`,
+        "text/markdown"
+      );
+      return;
+    }
+    downloadText(
+      exportArchitectureMermaid({ nodes, edges, groups }),
+      clean.endsWith(".mmd") ? clean : `${clean}.mmd`
+    );
+  };
+
   const load = async (f: File) => {
     try {
       const snap = await readSnapshotFromFile(f);
       replace({
-        nodes: snap.nodes,
-        edges: snap.edges,
+        nodes: snap.pages.find((page) => page.id === snap.currentPageId)?.nodes ?? [],
+        edges: snap.pages.find((page) => page.id === snap.currentPageId)?.edges ?? [],
         customBlocks: snap.customBlocks ?? [],
-        groups: snap.groups ?? [],
+        groups: snap.pages.find((page) => page.id === snap.currentPageId)?.groups ?? [],
+        pages: snap.pages,
+        currentPageId: snap.currentPageId,
         turbo: snap.turbo ?? false,
         animateEdges: snap.animateEdges ?? false,
         animationSpeed: snap.animationSpeed ?? 0.8,
@@ -504,6 +542,22 @@ export function Toolbar() {
             >
               Export SVG
             </MenuItem>
+            <MenuItem
+              onSelect={(close) => {
+                exportDoc("markdown");
+                close();
+              }}
+            >
+              Export Markdown
+            </MenuItem>
+            <MenuItem
+              onSelect={(close) => {
+                exportDoc("mermaid");
+                close();
+              }}
+            >
+              Export Mermaid
+            </MenuItem>
           </MenuSubmenu>
           <MenuItem
             onSelect={(close) => {
@@ -544,26 +598,66 @@ export function Toolbar() {
           </MenuItem>
         </Menu>
       </div>
-      <div className="pointer-events-none fixed left-1/2 top-0 z-40 flex h-12 -translate-x-1/2 items-center">
-        <div className="pointer-events-auto flex items-center rounded-md border border-border bg-card p-0.5">
-          {WORK_MODES.map((m) => {
-            const active = workMode === m.id;
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setWorkMode(m.id)}
-                className={cn(
-                  "rounded px-3 py-1 text-xs font-medium transition-colors",
-                  active
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {m.label}
-              </button>
-            );
-          })}
+      <div className="pointer-events-none fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center">
+        <div className="pointer-events-auto flex items-center gap-5 rounded-2xl border border-border bg-card/95 p-2 shadow-lg backdrop-blur">
+          <select
+            data-testid="page-select"
+            value={currentPageId}
+            onChange={(e) => switchPage(e.target.value)}
+            className="h-11 min-w-[160px] max-w-[220px] rounded-lg border border-border bg-background py-0 pl-4 pr-10 text-base"
+            title="Page"
+          >
+            {pages.map((page) => (
+              <option key={page.id} value={page.id}>
+                {page.name}
+              </option>
+            ))}
+          </select>
+          <button
+            data-testid="new-page"
+            type="button"
+            onClick={() => {
+              const name = window.prompt("Page name:", "Untitled");
+              if (name !== null) {
+                const id = createPage(name);
+                switchPage(id);
+              }
+            }}
+            className="rounded-lg px-3 py-2 text-base font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            New
+          </button>
+          <Menu icon={MoreVertical} label="Page" side="top" align="right">
+            <MenuItem
+              onSelect={(close) => {
+                const current = pages.find((p) => p.id === currentPageId);
+                const name = window.prompt("Rename page:", current?.name ?? "Untitled");
+                if (name !== null) renamePage(currentPageId, name);
+                close();
+              }}
+            >
+              Rename page
+            </MenuItem>
+            <MenuItem
+              onSelect={(close) => {
+                const id = duplicatePage(currentPageId);
+                switchPage(id);
+                close();
+              }}
+            >
+              Duplicate page
+            </MenuItem>
+            <MenuItem
+              danger
+              disabled={pages.length <= 1}
+              onSelect={(close) => {
+                deletePage(currentPageId);
+                close();
+              }}
+            >
+              Delete page
+            </MenuItem>
+          </Menu>
         </div>
       </div>
 
@@ -915,11 +1009,13 @@ function Menu({
   label,
   icon: Ic,
   align = "left",
+  side = "bottom",
   children,
 }: {
   label?: string;
   icon?: LucideIcon;
   align?: "left" | "right";
+  side?: "top" | "bottom";
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -957,7 +1053,8 @@ function Menu({
       {open && (
         <div
           className={cn(
-            "absolute top-full z-50 mt-1 min-w-[200px] rounded-md border border-border bg-card py-1 shadow-lg",
+            "absolute z-50 min-w-[200px] rounded-md border border-border bg-card py-1 shadow-lg",
+            side === "top" ? "bottom-full mb-1" : "top-full mt-1",
             align === "right" ? "right-0" : "left-0"
           )}
         >

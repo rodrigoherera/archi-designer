@@ -33,12 +33,15 @@ const DRAG_MIME = "application/x-netviz";
 function DragChip({
   payload,
   children,
+  testId,
 }: {
   payload: object;
   children: React.ReactNode;
+  testId?: string;
 }) {
   return (
     <div
+      data-testid={testId}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG_MIME, JSON.stringify(payload));
@@ -90,7 +93,7 @@ function BlockChip({
 }) {
   const Icon = resolveIcon(block.iconName);
   return (
-    <DragChip payload={{ kind: "infra", blockId: block.id }}>
+    <DragChip payload={{ kind: "infra", blockId: block.id }} testId={`block-${block.id}`}>
       <AccentTile
         icon={Icon}
         accent={block.accent}
@@ -125,7 +128,7 @@ function ShapeChip({
 }) {
   const Icon = shape === "circle" ? Circle : Square;
   return (
-    <DragChip payload={{ kind: "shape", shape }}>
+    <DragChip payload={{ kind: "shape", shape }} testId={`block-shape-${shape}`}>
       <AccentTile icon={Icon} accent={accent} />
       <span className="flex-1 truncate">{label}</span>
     </DragChip>
@@ -134,7 +137,7 @@ function ShapeChip({
 
 function TunnelChip() {
   return (
-    <DragChip payload={{ kind: "tunnel" }}>
+    <DragChip payload={{ kind: "tunnel" }} testId="block-tunnel">
       <AccentTile icon={TrainFrontTunnel} accent="sky" />
       <span className="flex-1 truncate">Tunnel</span>
     </DragChip>
@@ -143,7 +146,7 @@ function TunnelChip() {
 
 function TextChip() {
   return (
-    <DragChip payload={{ kind: "text" }}>
+    <DragChip payload={{ kind: "text" }} testId="block-text">
       <AccentTile icon={Type} accent="amber" />
       <span className="flex-1 truncate">Text</span>
     </DragChip>
@@ -152,7 +155,7 @@ function TextChip() {
 
 function StepChip() {
   return (
-    <DragChip payload={{ kind: "step" }}>
+    <DragChip payload={{ kind: "step" }} testId="block-step">
       <AccentTile icon={Hash} accent="indigo" />
       <span className="flex-1 truncate">Step</span>
     </DragChip>
@@ -161,7 +164,7 @@ function StepChip() {
 
 function LineChip() {
   return (
-    <DragChip payload={{ kind: "line" }}>
+    <DragChip payload={{ kind: "line" }} testId="block-line">
       <AccentTile icon={Minus} accent="teal" />
       <span className="flex-1 truncate">Line</span>
     </DragChip>
@@ -170,7 +173,7 @@ function LineChip() {
 
 function CodeChip() {
   return (
-    <DragChip payload={{ kind: "code" }}>
+    <DragChip payload={{ kind: "code" }} testId="block-code">
       <AccentTile icon={Code2} accent="violet" />
       <span className="flex-1 truncate">Code</span>
     </DragChip>

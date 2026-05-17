@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
+import {
+  persist,
+  type PersistStorage,
+  type StorageValue,
+} from "zustand/middleware";
 import { temporal } from "zundo";
 import { get as idbGet, set as idbSet, del as idbDel } from "idb-keyval";
 import {
@@ -21,7 +25,29 @@ export type InfraVariant = "row" | "card";
 export type IconPosition = "left" | "right" | "top" | "bottom";
 export type TextAlign = "left" | "center" | "right";
 
-type WithGroup = { groupId?: string | null };
+export type NodeArchitecture = {
+  category?: string;
+  environment?: string;
+  trustZone?: string;
+  dataClassification?: string;
+};
+type WithGroup = { groupId?: string | null; architecture?: NodeArchitecture };
+export type EdgeArchitecture = {
+  protocol?: string;
+  port?: string;
+  dataFlow?: string;
+};
+export const DEFAULT_NODE_ARCHITECTURE: NodeArchitecture = {
+  category: "unspecified",
+  environment: "unspecified",
+  trustZone: "unspecified",
+  dataClassification: "unspecified",
+};
+export const DEFAULT_EDGE_ARCHITECTURE: EdgeArchitecture = {
+  protocol: "",
+  port: "",
+  dataFlow: "",
+};
 type WithColors = {
   bgColor?: string;
   titleColor?: string;
@@ -154,8 +180,17 @@ export type LabeledEdgeData = {
   labelTextColor?: string;
   labelBgColor?: string;
   labelBorderColor?: string;
+  architecture?: EdgeArchitecture;
 };
 export type LabeledEdge = Edge<LabeledEdgeData, "labeled">;
+
+export type WorkspacePage = {
+  id: string;
+  name: string;
+  nodes: AppNode[];
+  edges: LabeledEdge[];
+  groups: Group[];
+};
 
 export const DEFAULT_MARKER: EdgeMarker = {
   type: MarkerType.ArrowClosed,
@@ -171,6 +206,8 @@ type Snapshot = {
   edges: LabeledEdge[];
   customBlocks: BlockDef[];
   groups: Group[];
+  pages: WorkspacePage[];
+  currentPageId: string;
   turbo: boolean;
   animateEdges: boolean;
   animationSpeed: number;
@@ -182,10 +219,7 @@ type Snapshot = {
   showControls: boolean;
   showGrid: boolean;
   showSmartGuides: boolean;
-  workMode: WorkMode;
 };
-
-export type WorkMode = "design" | "preview";
 
 type NodeDataPatch = Partial<InfraNodeData> &
   Partial<ShapeNodeData> &
@@ -218,6 +252,7 @@ type FlowState = Snapshot & {
     offset?: { x: number; y: number }
   ) => void;
   updateEdgeLabel: (id: string, label: string) => void;
+  updateEdgeArchitecture: (id: string, patch: EdgeArchitecture) => void;
   renameNode: (id: string, name: string) => void;
   deleteNode: (id: string) => void;
   selectNodes: (ids: string[]) => void;
@@ -263,13 +298,17 @@ type FlowState = Snapshot & {
   clear: () => void;
   resetWorkspace: () => Promise<void>;
   replace: (snapshot: Partial<Snapshot>) => void;
+  createPage: (name?: string) => string;
+  switchPage: (id: string) => void;
+  renamePage: (id: string, name: string) => void;
+  duplicatePage: (id: string) => string;
+  deletePage: (id: string) => void;
   selectAll: () => void;
   deleteSelected: () => void;
   toggleMinimap: () => void;
   toggleControls: () => void;
   toggleGrid: () => void;
   toggleSmartGuides: () => void;
-  setWorkMode: (mode: WorkMode) => void;
 };
 
 let nodeSeq = 0;
@@ -281,9 +320,30 @@ let edgeSeq = 0;
 const nextEdgeId = () =>
   `e${Date.now().toString(36)}${(edgeSeq++).toString(36)}`;
 const nextBlockId = () => `custom-${Math.random().toString(36).slice(2, 10)}`;
+const MAIN_PAGE_ID = "page-main";
+const nextPageId = () => `p${Date.now().toString(36)}${(nodeSeq++).toString(36)}`;
 
 const infraSize = (variant: InfraVariant) =>
   variant === "card" ? { width: 180, height: 150 } : { width: 220, height: 72 };
+
+function currentPageSnapshot(s: Snapshot): WorkspacePage {
+  const current = s.pages.find((p) => p.id === s.currentPageId);
+  return {
+    id: s.currentPageId || current?.id || MAIN_PAGE_ID,
+    name: current?.name || "Main",
+    nodes: s.nodes,
+    edges: s.edges,
+    groups: s.groups,
+  };
+}
+
+function pagesWithCurrent(s: Snapshot): WorkspacePage[] {
+  const saved = currentPageSnapshot(s);
+  const exists = s.pages.some((p) => p.id === saved.id);
+  return exists
+    ? s.pages.map((p) => (p.id === saved.id ? saved : p))
+    : [...s.pages, saved];
+}
 
 function renamedData(node: AppNode, name: string): AppNode["data"] {
   switch (node.type) {
@@ -317,12 +377,43 @@ function descendantGroupIds(groups: Group[], rootId: string): Set<string> {
   return result;
 }
 
-const idbStorage: StateStorage = {
-  getItem: async (name) => ((await idbGet(name)) as string | undefined) ?? null,
-  setItem: async (name, value) => {
-    await idbSet(name, value);
+type PersistedFlowState = Partial<Snapshot>;
+
+const memoryStorage = new Map<string, StorageValue<PersistedFlowState>>();
+const pendingPersistTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const hasIndexedDB = () => typeof indexedDB !== "undefined";
+
+const idbStorage: PersistStorage<PersistedFlowState> = {
+  getItem: async (name) => {
+    if (!hasIndexedDB()) return memoryStorage.get(name) ?? null;
+    const raw = (await idbGet(name)) as string | undefined;
+    return raw ? (JSON.parse(raw) as StorageValue<PersistedFlowState>) : null;
+  },
+  setItem: (name, value) => {
+    if (pendingPersistTimers.has(name)) {
+      clearTimeout(pendingPersistTimers.get(name));
+    }
+    if (!hasIndexedDB()) {
+      memoryStorage.set(name, value);
+      return;
+    }
+    pendingPersistTimers.set(
+      name,
+      setTimeout(() => {
+        pendingPersistTimers.delete(name);
+        void idbSet(name, JSON.stringify(value));
+      }, 250)
+    );
   },
   removeItem: async (name) => {
+    if (pendingPersistTimers.has(name)) {
+      clearTimeout(pendingPersistTimers.get(name));
+      pendingPersistTimers.delete(name);
+    }
+    if (!hasIndexedDB()) {
+      memoryStorage.delete(name);
+      return;
+    }
     await idbDel(name);
   },
 };
@@ -335,6 +426,8 @@ export const useFlowStore = create<FlowState>()(
   edges: [],
   customBlocks: [],
   groups: [],
+  pages: [{ id: MAIN_PAGE_ID, name: "Main", nodes: [], edges: [], groups: [] }],
+  currentPageId: MAIN_PAGE_ID,
   turbo: false,
   animateEdges: false,
   animationSpeed: 0.8,
@@ -345,7 +438,6 @@ export const useFlowStore = create<FlowState>()(
   showControls: true,
   showGrid: true,
   showSmartGuides: true,
-  workMode: "design" as WorkMode,
 
   onNodesChange: (changes) =>
     set((s) => ({ nodes: applyNodeChanges(changes, s.nodes) })),
@@ -360,11 +452,12 @@ export const useFlowStore = create<FlowState>()(
           ...conn,
           type: "labeled",
           data: {
-            label: "",
-            turbo: s.turbo,
-            color: s.edgeColor,
-            lineStyle: s.edgeLineStyle,
-            dashGap: s.edgeDashGap,
+              label: "",
+              turbo: s.turbo,
+              color: s.edgeColor,
+              lineStyle: s.edgeLineStyle,
+              dashGap: s.edgeDashGap,
+              architecture: { ...DEFAULT_EDGE_ARCHITECTURE },
           },
           animated: s.animateEdges,
           markerEnd: s.turbo ? undefined : DEFAULT_MARKER,
@@ -398,6 +491,7 @@ export const useFlowStore = create<FlowState>()(
               iconPosition: block.iconPosition,
               textAlign: block.textAlign,
               customIcon: block.customIcon,
+              architecture: { ...DEFAULT_NODE_ARCHITECTURE },
             },
           },
         ],
@@ -419,7 +513,7 @@ export const useFlowStore = create<FlowState>()(
               ? { width: 220, height: 220 }
               : { width: 300, height: 200 },
           zIndex: 0,
-          data: { shape, label: shape === "circle" ? "Circle" : "Rectangle", accent: "slate" },
+          data: { shape, label: shape === "circle" ? "Circle" : "Rectangle", accent: "slate", architecture: { ...DEFAULT_NODE_ARCHITECTURE } },
         },
       ],
     })),
@@ -433,7 +527,7 @@ export const useFlowStore = create<FlowState>()(
           type: "text",
           position,
           zIndex: 1,
-          data: { text: "Text", accent: "amber" },
+          data: { text: "Text", accent: "amber", architecture: { ...DEFAULT_NODE_ARCHITECTURE } },
         },
       ],
     })),
@@ -450,6 +544,7 @@ export const useFlowStore = create<FlowState>()(
           data: {
             code: "// your code here\nconst answer = 42;",
             language: "typescript",
+            architecture: { ...DEFAULT_NODE_ARCHITECTURE },
           },
         },
       ],
@@ -468,7 +563,7 @@ export const useFlowStore = create<FlowState>()(
             position,
             style: { width: 56, height: 56 },
             zIndex: 1,
-            data: { step: nextIndex, accent: "indigo" },
+            data: { step: nextIndex, accent: "indigo", architecture: { ...DEFAULT_NODE_ARCHITECTURE } },
           },
         ],
       };
@@ -484,7 +579,7 @@ export const useFlowStore = create<FlowState>()(
           position,
           style: { width: 260, height: 90 },
           zIndex: 0,
-          data: { label: "Tunnel", accent: "sky" },
+          data: { label: "Tunnel", accent: "sky", architecture: { ...DEFAULT_NODE_ARCHITECTURE } },
         },
       ],
     })),
@@ -510,6 +605,7 @@ export const useFlowStore = create<FlowState>()(
             strokeColor: "#94a3b8",
             strokeWidth: 2,
             dashed: false,
+            architecture: { ...DEFAULT_NODE_ARCHITECTURE },
           },
         },
       ],
@@ -525,7 +621,7 @@ export const useFlowStore = create<FlowState>()(
           position,
           style: size,
           zIndex: 1,
-          data: { src },
+          data: { src, architecture: { ...DEFAULT_NODE_ARCHITECTURE } },
         },
       ],
     })),
@@ -582,6 +678,25 @@ export const useFlowStore = create<FlowState>()(
     set((s) => ({
       edges: s.edges.map((e) =>
         e.id === id ? { ...e, data: { ...e.data, label } } : e
+      ),
+    })),
+
+  updateEdgeArchitecture: (id, patch) =>
+    set((s) => ({
+      edges: s.edges.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              data: {
+                ...(e.data ?? {}),
+                architecture: {
+                  ...DEFAULT_EDGE_ARCHITECTURE,
+                  ...(e.data?.architecture ?? {}),
+                  ...patch,
+                },
+              },
+            }
+          : e
       ),
     })),
 
@@ -1024,7 +1139,13 @@ export const useFlowStore = create<FlowState>()(
       return { groups: next };
     }),
 
-  clear: () => set({ nodes: [], edges: [], groups: [] }),
+  clear: () =>
+    set((s) => ({
+      nodes: [],
+      edges: [],
+      groups: [],
+      pages: pagesWithCurrent({ ...s, nodes: [], edges: [], groups: [] }),
+    })),
 
   resetWorkspace: async () => {
     try {
@@ -1035,7 +1156,117 @@ export const useFlowStore = create<FlowState>()(
     window.location.reload();
   },
 
-  replace: (snapshot) => set((s) => ({ ...s, ...snapshot })),
+  replace: (snapshot) =>
+    set((s) => {
+      const next = { ...s, ...snapshot };
+      const pages =
+        snapshot.pages ??
+        pagesWithCurrent({
+          ...next,
+          pages: s.pages.length
+            ? s.pages
+            : [
+                {
+                  id: MAIN_PAGE_ID,
+                  name: "Main",
+                  nodes: next.nodes,
+                  edges: next.edges,
+                  groups: next.groups,
+                },
+              ],
+        });
+      const currentPageId =
+        snapshot.currentPageId ??
+        pages.find((p) => p.id === s.currentPageId)?.id ??
+        pages[0]?.id ??
+        MAIN_PAGE_ID;
+      const current = pages.find((p) => p.id === currentPageId) ?? pages[0];
+      return {
+        ...next,
+        pages,
+        currentPageId: current.id,
+        nodes: current.nodes,
+        edges: current.edges,
+        groups: current.groups,
+      };
+    }),
+
+  createPage: (name = "Untitled") => {
+    const id = nextPageId();
+    set((s) => ({
+      pages: [
+        ...pagesWithCurrent(s),
+        { id, name: name.trim() || "Untitled", nodes: [], edges: [], groups: [] },
+      ],
+    }));
+    return id;
+  },
+
+  switchPage: (id) =>
+    set((s) => {
+      const pages = pagesWithCurrent(s);
+      const page = pages.find((p) => p.id === id);
+      if (!page) return s;
+      return {
+        pages,
+        currentPageId: page.id,
+        nodes: page.nodes,
+        edges: page.edges,
+        groups: page.groups,
+      };
+    }),
+
+  renamePage: (id, name) =>
+    set((s) => ({
+      pages: pagesWithCurrent(s).map((p) =>
+        p.id === id ? { ...p, name: name.trim() || "Untitled" } : p
+      ),
+    })),
+
+  duplicatePage: (id) => {
+    const newId = nextPageId();
+    set((s) => {
+      const pages = pagesWithCurrent(s);
+      const page = pages.find((p) => p.id === id);
+      if (!page) return s;
+      return {
+        pages: [
+          ...pages,
+          {
+            ...page,
+            id: newId,
+            name: `${page.name} copy`,
+            nodes: page.nodes.map((n) => ({ ...n, data: { ...n.data } } as AppNode)),
+            edges: page.edges.map((e) => ({
+              ...e,
+              data: e.data ? { ...e.data } : undefined,
+            })),
+            groups: page.groups.map((g) => ({ ...g })),
+          },
+        ],
+      };
+    });
+    return newId;
+  },
+
+  deletePage: (id) =>
+    set((s) => {
+      const pages = pagesWithCurrent(s);
+      if (pages.length <= 1) return s;
+      const nextPages = pages.filter((p) => p.id !== id);
+      if (nextPages.length === pages.length) return s;
+      const nextCurrent =
+        s.currentPageId === id
+          ? nextPages[0]
+          : nextPages.find((p) => p.id === s.currentPageId) ?? nextPages[0];
+      return {
+        pages: nextPages,
+        currentPageId: nextCurrent.id,
+        nodes: nextCurrent.nodes,
+        edges: nextCurrent.edges,
+        groups: nextCurrent.groups,
+      };
+    }),
 
   selectAll: () =>
     set((s) => ({
@@ -1064,13 +1295,14 @@ export const useFlowStore = create<FlowState>()(
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   toggleSmartGuides: () =>
     set((s) => ({ showSmartGuides: !s.showSmartGuides })),
-  setWorkMode: (mode) => set({ workMode: mode }),
     }),
     {
       partialize: (state) => ({
         nodes: state.nodes,
         edges: state.edges,
         groups: state.groups,
+        pages: state.pages,
+        currentPageId: state.currentPageId,
         customBlocks: state.customBlocks,
       }),
       limit: 100,
@@ -1090,12 +1322,14 @@ export const useFlowStore = create<FlowState>()(
     ),
     {
       name: "netviz-store-v1",
-      storage: createJSONStorage(() => idbStorage),
+      storage: idbStorage,
       partialize: (s) => ({
         nodes: s.nodes,
         edges: s.edges,
         customBlocks: s.customBlocks,
         groups: s.groups,
+        pages: pagesWithCurrent(s),
+        currentPageId: s.currentPageId,
         turbo: s.turbo,
         animateEdges: s.animateEdges,
         animationSpeed: s.animationSpeed,
