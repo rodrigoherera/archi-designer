@@ -7,7 +7,7 @@ import {
 } from "@xyflow/react";
 import { resolveBlock, useFlowStore, type InfraNode } from "@/store/flow-store";
 import { ACCENT_CLASSES, CORE_BLOCKS } from "@/blocks/registry";
-import { resolveIcon } from "@/blocks/icons";
+import { ResolvedIcon } from "@/blocks/icons";
 import { cn } from "@/lib/utils";
 
 const HANDLE_POSITIONS: { pos: Position; key: string }[] = [
@@ -22,7 +22,6 @@ function InfraNodeComponent({ data, selected }: NodeProps<InfraNode>) {
   const block = resolveBlock(data.blockId, customBlocks) ?? CORE_BLOCKS[0];
   const iconName = data.iconName ?? block.iconName;
   const accentKey = data.accent ?? block.accent;
-  const Icon = resolveIcon(iconName);
   const accent = ACCENT_CLASSES[accentKey];
   const variant = data.variant ?? block.variant ?? "row";
   const isCard = variant === "card";
@@ -52,7 +51,7 @@ function InfraNodeComponent({ data, selected }: NodeProps<InfraNode>) {
           draggable={false}
         />
       ) : (
-        <Icon className={cn("h-5 w-5", accent.icon)} />
+        <ResolvedIcon name={iconName} className={cn("h-5 w-5", accent.icon)} />
       )}
     </div>
   ) : null;

@@ -21,7 +21,7 @@ import {
   type BlockDef,
 } from "@/blocks/registry";
 import { X } from "lucide-react";
-import { resolveIcon } from "@/blocks/icons";
+import { ResolvedIcon } from "@/blocks/icons";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils";
 import { CustomBlockDialog } from "./custom-block-dialog";
@@ -55,12 +55,12 @@ function DragChip({
 }
 
 function AccentTile({
-  icon: Icon,
+  icon,
   accent,
   customIcon,
   hasIcon,
 }: {
-  icon: LucideIcon;
+  icon: LucideIcon | string;
   accent: Accent;
   customIcon?: string;
   hasIcon?: boolean;
@@ -77,8 +77,13 @@ function AccentTile({
         <img src={customIcon} alt="" className="h-4 w-4 object-contain" />
       ) : hasIcon === false ? (
         <span className={cn("h-2.5 w-2.5 rounded-full", c.dot)} />
+      ) : typeof icon === "string" ? (
+        <ResolvedIcon name={icon} className={cn("h-4 w-4", c.icon)} />
       ) : (
-        <Icon className={cn("h-4 w-4", c.icon)} />
+        (() => {
+          const Icon = icon;
+          return <Icon className={cn("h-4 w-4", c.icon)} />;
+        })()
       )}
     </div>
   );
@@ -91,11 +96,10 @@ function BlockChip({
   block: BlockDef;
   onDelete?: () => void;
 }) {
-  const Icon = resolveIcon(block.iconName);
   return (
     <DragChip payload={{ kind: "infra", blockId: block.id }} testId={`block-${block.id}`}>
       <AccentTile
-        icon={Icon}
+        icon={block.iconName}
         accent={block.accent}
         customIcon={block.customIcon}
         hasIcon={!!block.iconName}

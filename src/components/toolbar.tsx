@@ -18,7 +18,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useReactFlow, getNodesBounds, getViewportForBounds } from "@xyflow/react";
-import { toPng, toSvg } from "html-to-image";
 import { useStore } from "zustand";
 import { useFlowStore } from "@/store/flow-store";
 import { downloadSnapshot, readSnapshotFromFile } from "@/lib/storage";
@@ -328,6 +327,7 @@ export function Toolbar() {
           transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})`,
         },
       };
+      const { toPng, toSvg } = await import("html-to-image");
       const dataUrl =
         format === "png"
           ? await toPng(viewport, opts)

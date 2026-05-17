@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignCenter,
   AlignLeft,
@@ -15,7 +15,11 @@ import {
   type IconPositionDef,
   type TextAlignDef,
 } from "@/blocks/registry";
-import { LUCIDE_ICON_NAMES, resolveIcon, type IconName } from "@/blocks/icons";
+import {
+  getLucideIconNames,
+  ResolvedIcon,
+  type IconName,
+} from "@/blocks/icons";
 import {
   Dialog,
   DialogContent,
@@ -145,12 +149,30 @@ export function CustomBlockDialog({
   const [textAlign, setTextAlign] = useState<TextAlignDef>("left");
   const [customIcon, setCustomIcon] = useState<string | undefined>(undefined);
   const iconInputRef = useRef<HTMLInputElement>(null);
+  const [iconNames, setIconNames] = useState<string[]>([]);
+  const [iconsLoading, setIconsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setIconsLoading(true);
+    getLucideIconNames()
+      .then((names) => {
+        if (!cancelled) setIconNames(names);
+      })
+      .finally(() => {
+        if (!cancelled) setIconsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const filteredIcons = useMemo(() => {
     const q = iconQuery.trim().toLowerCase();
-    if (!q) return LUCIDE_ICON_NAMES;
-    return LUCIDE_ICON_NAMES.filter((n) => n.toLowerCase().includes(q));
-  }, [iconQuery]);
+    if (!q) return iconNames;
+    return iconNames.filter((n) => n.toLowerCase().includes(q));
+  }, [iconNames, iconQuery]);
 
   const reset = () => {
     setLabel("");
@@ -254,24 +276,26 @@ export function CustomBlockDialog({
               >
                 <X className="h-3.5 w-3.5" />
               </button>
-              {filteredIcons.map((name) => {
-                const Ic = resolveIcon(name);
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => setIconName(name)}
-                    title={name}
-                    className={cn(
-                      "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-                      iconName === name &&
-                        "bg-accent text-foreground ring-1 ring-ring"
-                    )}
-                  >
-                    <Ic className="h-3.5 w-3.5" />
-                  </button>
-                );
-              })}
+              {filteredIcons.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => setIconName(name)}
+                  title={name}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                    iconName === name &&
+                      "bg-accent text-foreground ring-1 ring-ring"
+                  )}
+                >
+                  <ResolvedIcon name={name} className="h-3.5 w-3.5" />
+                </button>
+              ))}
+              {iconsLoading && filteredIcons.length === 0 && (
+                <p className="col-span-10 px-2 py-4 text-center text-xs text-muted-foreground">
+                  Loading icons...
+                </p>
+              )}
             </div>
           </div>
 

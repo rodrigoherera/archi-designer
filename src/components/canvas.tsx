@@ -23,7 +23,7 @@ import {
   type NodeChange,
   type NodeTypes,
 } from "@xyflow/react";
-import { resolveIcon } from "@/blocks/icons";
+import { ResolvedIcon } from "@/blocks/icons";
 import "@xyflow/react/dist/style.css";
 import {
   DEFAULT_MARKER,
@@ -847,7 +847,6 @@ function CanvasInner() {
             </p>
             <div className="grid max-h-72 grid-cols-1 gap-0.5 overflow-y-auto">
               {registry.map((b) => {
-                const Ic = resolveIcon(b.iconName);
                 const accent = ACCENT_CLASSES[b.accent];
                 const hasIcon = !!(b.customIcon || b.iconName);
                 return (
@@ -870,7 +869,10 @@ function CanvasInner() {
                           className="h-full w-full object-cover"
                         />
                       ) : hasIcon ? (
-                        <Ic className={cn("h-3 w-3", accent.icon)} />
+                        <ResolvedIcon
+                          name={b.iconName}
+                          className={cn("h-3 w-3", accent.icon)}
+                        />
                       ) : (
                         <span className={cn("h-2 w-2 rounded-full", accent.dot)} />
                       )}

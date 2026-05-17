@@ -1,5 +1,27 @@
-import * as LucideIcons from "lucide-react";
-import { Box, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Box,
+  Cloud,
+  Container,
+  Cpu,
+  Database,
+  Globe,
+  HardDrive,
+  KeyRound,
+  Laptop,
+  Layers,
+  Lock,
+  Scale,
+  Server,
+  Shield,
+  Smartphone,
+  TrendingUpDown,
+  Users,
+  Wifi,
+  Zap,
+  type LucideIcon,
+  type LucideProps,
+} from "lucide-react";
 
 export type IconName = string;
 
@@ -33,6 +55,28 @@ const LEGACY_MAP: Record<string, string> = {
   key: "KeyRound",
 };
 
+const STATIC_ICONS: Record<string, LucideIcon> = {
+  Box,
+  Cloud,
+  Container,
+  Cpu,
+  Database,
+  Globe,
+  HardDrive,
+  KeyRound,
+  Laptop,
+  Layers,
+  Lock,
+  Scale,
+  Server,
+  Shield,
+  Smartphone,
+  TrendingUpDown,
+  Users,
+  Wifi,
+  Zap,
+};
+
 function isIconComponent(v: unknown): v is LucideIcon {
   return (
     v !== null &&
@@ -44,22 +88,73 @@ function isIconComponent(v: unknown): v is LucideIcon {
 
 export function resolveIcon(name: string | undefined): LucideIcon {
   if (!name) return Box;
-  const lib = LucideIcons as Record<string, unknown>;
-  const direct = lib[name];
-  if (isIconComponent(direct)) return direct;
   const legacy = LEGACY_MAP[name];
-  if (legacy && isIconComponent(lib[legacy])) return lib[legacy] as LucideIcon;
+  if (legacy && STATIC_ICONS[legacy]) return STATIC_ICONS[legacy];
   const pascal = toPascal(name);
-  if (isIconComponent(lib[pascal])) return lib[pascal] as LucideIcon;
+  if (STATIC_ICONS[name]) return STATIC_ICONS[name];
+  if (STATIC_ICONS[pascal]) return STATIC_ICONS[pascal];
   return Box;
 }
 
-export const LUCIDE_ICON_NAMES: string[] = Object.keys(LucideIcons)
-  .filter((k) => {
-    if (!/^[A-Z]/.test(k) || k.endsWith("Icon")) return false;
-    const v = (LucideIcons as Record<string, unknown>)[k];
-    if (!isIconComponent(v)) return false;
-    const display = (v as { displayName?: string }).displayName;
-    return !display || display === k;
-  })
-  .sort();
+let iconNamesPromise: Promise<string[]> | null = null;
+
+export function getLucideIconNames(): Promise<string[]> {
+  iconNamesPromise ??= import("lucide-react").then((icons) =>
+    Object.keys(icons)
+      .filter((k) => {
+        if (!/^[A-Z]/.test(k) || k.endsWith("Icon")) return false;
+        const v = (icons as Record<string, unknown>)[k];
+        if (!isIconComponent(v)) return false;
+        const display = (v as { displayName?: string }).displayName;
+        return !display || display === k;
+      })
+      .sort()
+  );
+  return iconNamesPromise;
+}
+
+const asyncIconCache = new Map<string, LucideIcon>();
+
+export function ResolvedIcon({
+  name,
+  ...props
+}: LucideProps & { name: string | undefined }) {
+  const staticIcon = useMemo(() => resolveIcon(name), [name]);
+  const needsAsyncIcon =
+    !!name && staticIcon === Box && toPascal(name) !== "Box" && name !== "box";
+  const [AsyncIcon, setAsyncIcon] = useState<LucideIcon | null>(() =>
+    name ? asyncIconCache.get(name) ?? null : null
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!name || !needsAsyncIcon) {
+      setAsyncIcon(null);
+      return;
+    }
+    const cached = asyncIconCache.get(name);
+    if (cached) {
+      setAsyncIcon(cached);
+      return;
+    }
+    import("lucide-react").then((icons) => {
+      if (cancelled) return;
+      const lib = icons as Record<string, unknown>;
+      const direct = lib[name];
+      const pascal = lib[toPascal(name)];
+      const icon = isIconComponent(direct)
+        ? direct
+        : isIconComponent(pascal)
+          ? pascal
+          : null;
+      if (icon) asyncIconCache.set(name, icon);
+      setAsyncIcon(icon);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [name, needsAsyncIcon]);
+
+  const Icon = AsyncIcon ?? staticIcon;
+  return <Icon {...props} />;
+}

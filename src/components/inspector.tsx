@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   AlignCenter,
@@ -43,7 +43,7 @@ import {
   COLOR_PRESETS,
   type Accent,
 } from "@/blocks/registry";
-import { LUCIDE_ICON_NAMES, resolveIcon } from "@/blocks/icons";
+import { getLucideIconNames, ResolvedIcon } from "@/blocks/icons";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
@@ -535,11 +535,29 @@ function ColorsSection({ targets }: { targets: ColorTarget[] }) {
 
 function IconPicker({ value, onChange }: { value: string; onChange: (name: string) => void }) {
   const [query, setQuery] = useState("");
+  const [iconNames, setIconNames] = useState<string[]>([]);
+  const [iconsLoading, setIconsLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIconsLoading(true);
+    getLucideIconNames()
+      .then((names) => {
+        if (!cancelled) setIconNames(names);
+      })
+      .finally(() => {
+        if (!cancelled) setIconsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return LUCIDE_ICON_NAMES;
-    return LUCIDE_ICON_NAMES.filter((n) => n.toLowerCase().includes(q));
-  }, [query]);
+    if (!q) return iconNames;
+    return iconNames.filter((n) => n.toLowerCase().includes(q));
+  }, [iconNames, query]);
 
   return (
     <div className="grid gap-2">
@@ -567,7 +585,6 @@ function IconPicker({ value, onChange }: { value: string; onChange: (name: strin
           <X className="h-3.5 w-3.5" />
         </button>
         {filtered.map((name) => {
-          const Ic = resolveIcon(name);
           const active = value === name;
           return (
             <button
@@ -581,11 +598,16 @@ function IconPicker({ value, onChange }: { value: string; onChange: (name: strin
               title={name}
               aria-label={name}
             >
-              <Ic className="h-3.5 w-3.5" />
+              <ResolvedIcon name={name} className="h-3.5 w-3.5" />
             </button>
           );
         })}
-        {filtered.length === 0 && (
+        {iconsLoading && filtered.length === 0 && (
+          <p className="col-span-8 px-2 py-4 text-center text-xs text-muted-foreground">
+            Loading icons...
+          </p>
+        )}
+        {!iconsLoading && filtered.length === 0 && (
           <p className="col-span-8 px-2 py-4 text-center text-xs text-muted-foreground">
             No icons match.
           </p>

@@ -41,7 +41,7 @@ import {
   type AppNode,
   type Group,
 } from "@/store/flow-store";
-import { resolveIcon } from "@/blocks/icons";
+import { ResolvedIcon } from "@/blocks/icons";
 import type { BlockDef } from "@/blocks/registry";
 import { cn } from "@/lib/utils";
 
@@ -69,27 +69,32 @@ type DragPayload =
 
 type DropZone = "before" | "after" | "into";
 
-function nodeIcon(node: AppNode, customBlocks: BlockDef[]): LucideIcon {
+function nodeIcon(node: AppNode, customBlocks: BlockDef[]): ReactNode {
+  const iconClass = "h-3.5 w-3.5 shrink-0 text-muted-foreground";
   switch (node.type) {
     case "infra": {
       const block = resolveBlock(node.data.blockId, customBlocks);
       const iconName = node.data.iconName ?? block?.iconName ?? "box";
-      return resolveIcon(iconName);
+      return <ResolvedIcon name={iconName} className={iconClass} />;
     }
     case "shape":
-      return node.data.shape === "circle" ? Circle : Square;
+      return node.data.shape === "circle" ? (
+        <Circle className={iconClass} />
+      ) : (
+        <Square className={iconClass} />
+      );
     case "text":
-      return Type;
+      return <Type className={iconClass} />;
     case "step":
-      return Hash;
+      return <Hash className={iconClass} />;
     case "tunnel":
-      return TrainFrontTunnel;
+      return <TrainFrontTunnel className={iconClass} />;
     case "line":
-      return Minus;
+      return <Minus className={iconClass} />;
     case "image":
-      return ImageIcon;
+      return <ImageIcon className={iconClass} />;
     case "code":
-      return Code2;
+      return <Code2 className={iconClass} />;
   }
 }
 
@@ -479,7 +484,7 @@ const NodeRow = memo(function NodeRow({
   const deleteNode = useFlowStore((s) => s.deleteNode);
   const moveNodeBefore = useFlowStore((s) => s.moveNodeBefore);
   const customBlocks = useFlowStore((s) => s.customBlocks);
-  const Icon = nodeIcon(node, customBlocks);
+  const icon = nodeIcon(node, customBlocks);
   const name = getNodeDisplayName(node);
   const selected = !!node.selected;
   const hidden = !!node.hidden;
@@ -561,7 +566,7 @@ const NodeRow = memo(function NodeRow({
         leading={
           <>
             <span className="w-3.5 shrink-0" />
-            <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            {icon}
           </>
         }
         name={name}
