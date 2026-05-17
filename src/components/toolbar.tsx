@@ -10,7 +10,9 @@ import {
 import { createPortal } from "react-dom";
 import {
   Check,
+  ChevronDown,
   ChevronRight,
+  DraftingCompass,
   MoreVertical,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -58,6 +60,8 @@ export function Toolbar() {
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [newPageDialogOpen, setNewPageDialogOpen] = useState(false);
+  const [newPageName, setNewPageName] = useState("Untitled");
   const [exportDialog, setExportDialog] = useState<{
     format: "png" | "svg";
     name: string;
@@ -124,7 +128,7 @@ export function Toolbar() {
   };
 
   const defaultExportName = () =>
-    `netviz-${new Date()
+    `archi-designer-${new Date()
       .toISOString()
       .slice(0, 19)
       .replace(/[:T]/g, "-")}`;
@@ -164,6 +168,17 @@ export function Toolbar() {
   }, [cropMode]);
 
   const onCropCancel = useCallback(() => setCropMode(null), []);
+
+  const openNewPageDialog = () => {
+    setNewPageName("Untitled");
+    setNewPageDialogOpen(true);
+  };
+
+  const submitNewPage = () => {
+    const id = createPage(newPageName);
+    switchPage(id);
+    setNewPageDialogOpen(false);
+  };
 
   const exportImage = async (
     format: "png" | "svg",
@@ -355,7 +370,7 @@ export function Toolbar() {
   };
 
   const save = () => {
-    const suggested = `netviz-${new Date()
+    const suggested = `archi-designer-${new Date()
       .toISOString()
       .slice(0, 19)
       .replace(/[:T]/g, "-")}`;
@@ -440,6 +455,19 @@ export function Toolbar() {
 
   return (
     <header className="relative flex h-12 shrink-0 items-center border-b border-border bg-card/40 px-2">
+      <div className="flex min-w-[220px] items-center gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-foreground">
+          <DraftingCompass className="h-5 w-5" aria-hidden="true" />
+        </div>
+        <div className="leading-tight">
+          <div className="text-sm font-semibold tracking-[0.18em] text-foreground">
+            ARCHI
+          </div>
+          <div className="text-[11px] font-medium uppercase tracking-[0.24em] text-muted-foreground">
+            Designer
+          </div>
+        </div>
+      </div>
       <div className="flex items-center justify-start gap-0.5">
         <Menu icon={MoreVertical} label="More" align="left">
           <MenuSubmenu label="Edit">
@@ -600,29 +628,29 @@ export function Toolbar() {
       </div>
       <div className="pointer-events-none fixed bottom-5 left-1/2 z-40 flex -translate-x-1/2 items-center">
         <div className="pointer-events-auto flex items-center gap-5 rounded-2xl border border-border bg-card/95 p-2 shadow-lg backdrop-blur">
-          <select
-            data-testid="page-select"
-            value={currentPageId}
-            onChange={(e) => switchPage(e.target.value)}
-            className="h-11 min-w-[160px] max-w-[220px] rounded-lg border border-border bg-background py-0 pl-4 pr-10 text-base"
-            title="Page"
-          >
-            {pages.map((page) => (
-              <option key={page.id} value={page.id}>
-                {page.name}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              data-testid="page-select"
+              value={currentPageId}
+              onChange={(e) => switchPage(e.target.value)}
+              className="h-11 min-w-[160px] max-w-[220px] appearance-none rounded-lg border border-border bg-background py-0 pl-4 pr-11 text-base"
+              title="Page"
+            >
+              {pages.map((page) => (
+                <option key={page.id} value={page.id}>
+                  {page.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-foreground"
+              aria-hidden="true"
+            />
+          </div>
           <button
             data-testid="new-page"
             type="button"
-            onClick={() => {
-              const name = window.prompt("Page name:", "Untitled");
-              if (name !== null) {
-                const id = createPage(name);
-                switchPage(id);
-              }
-            }}
+            onClick={openNewPageDialog}
             className="rounded-lg px-3 py-2 text-base font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             New
@@ -685,6 +713,39 @@ export function Toolbar() {
           e.target.value = "";
         }}
       />
+      <Dialog open={newPageDialogOpen} onOpenChange={setNewPageDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New page</DialogTitle>
+            <DialogDescription>Name the page before adding it to the workspace.</DialogDescription>
+          </DialogHeader>
+          <form
+            className="grid gap-1.5 py-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitNewPage();
+            }}
+          >
+            <Label htmlFor="new-page-name">Page name</Label>
+            <Input
+              id="new-page-name"
+              autoFocus
+              value={newPageName}
+              onChange={(e) => setNewPageName(e.target.value)}
+            />
+            <DialogFooter className="pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setNewPageDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">Create page</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <DialogContent>
           <DialogHeader>

@@ -81,7 +81,8 @@ export function downloadSnapshot(snapshot: FlowSnapshot, filename?: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  const base = (filename ?? `netviz-${Date.now()}`).trim() || "netviz";
+  const base =
+    (filename ?? `archi-designer-${Date.now()}`).trim() || "archi-designer";
   a.download = base.endsWith(".json") ? base : `${base}.json`;
   document.body.appendChild(a);
   a.click();

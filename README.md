@@ -1,6 +1,6 @@
-# Netviz
+# Archi Designer
 
-Netviz is a browser-based app for designing network architectures visually. 
+Archi Designer is a browser-based app for designing network architectures visually.
 
 Add components like servers, proxies, and databases to a canvas, connect them to map data flow, organize them into layers, and customize every detail.
 
@@ -74,8 +74,8 @@ The repo ships with a `Dockerfile` and an `nginx.conf`. Build the app first so `
 
 ```bash
 bun run build
-docker build -t netviz .
-docker run --rm -p 8080:8080 netviz
+docker build -t archi-designer .
+docker run --rm -p 8080:8080 archi-designer
 ```
 
 Open http://localhost:8080.

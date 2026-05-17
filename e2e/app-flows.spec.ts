@@ -17,7 +17,7 @@ async function acceptNextPrompt(page: Page, value: string) {
   });
 }
 
-test.describe("Netviz browser flows", () => {
+test.describe("Archi Designer browser flows", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
   });
